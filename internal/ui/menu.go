@@ -61,9 +61,41 @@ func (m menu) update(msg tea.Msg) (screen, tea.Cmd) {
 	return m, nil
 }
 
+const logo = `██╗  ██╗███████╗██╗   ██╗██████╗ ██████╗ ██╗██╗     ██╗
+██║ ██╔╝██╔════╝╚██╗ ██╔╝██╔══██╗██╔══██╗██║██║     ██║
+█████╔╝ █████╗   ╚████╔╝ ██║  ██║██████╔╝██║██║     ██║
+██╔═██╗ ██╔══╝    ╚██╔╝  ██║  ██║██╔══██╗██║██║     ██║
+██║  ██╗███████╗   ██║   ██████╔╝██║  ██║██║███████╗███████╗
+╚═╝  ╚═╝╚══════╝   ╚═╝   ╚═════╝ ╚═╝  ╚═╝╚═╝╚══════╝╚══════╝`
+
+// smallLogo is for windows too narrow for logo.
+const smallLogo = `█▄▀ █▀▀ █▄█ █▀▄ █▀█ █ █   █
+█ █ ██▄  █  █▄▀ █▀▄ █ █▄▄ █▄▄`
+
+// logoView colours a logo column by column, fading from mauve to blue.
+func logoView(art string) string {
+	lines := strings.Split(art, "\n")
+	fade := lipgloss.Blend1D(lipgloss.Width(art), mauve, lipgloss.Color("#b7bdf8"), lipgloss.Color("#8aadf4"))
+	for i, line := range lines {
+		var b strings.Builder
+		for col, r := range []rune(line) {
+			b.WriteString(lipgloss.NewStyle().Foreground(fade[col]).Render(string(r)))
+		}
+		lines[i] = b.String()
+	}
+	return strings.Join(lines, "\n")
+}
+
 func (m menu) view(width, height int) string {
 	var b strings.Builder
-	b.WriteString(title.Render("keydrill") + "\n")
+	switch {
+	case width == 0 || width >= lipgloss.Width(logo)+4:
+		b.WriteString(logoView(logo) + "\n\n")
+	case width >= lipgloss.Width(smallLogo)+4:
+		b.WriteString(logoView(smallLogo) + "\n\n")
+	default:
+		b.WriteString(title.Render("keydrill") + "\n")
+	}
 	b.WriteString(faint.Render("Practise shell and Vim commands until they stick.") + "\n\n")
 
 	// Pad descriptions to the longest one so the band is the same width on

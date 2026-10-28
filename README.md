@@ -1,4 +1,4 @@
-# Keydrill
+<h1 align="center"><img src="assets/logo.svg" alt="Keydrill" width="600"></h1>
 
 Practise shell and Vim commands in your terminal until they stick.
 
