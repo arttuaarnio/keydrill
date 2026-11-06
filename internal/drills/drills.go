@@ -23,9 +23,10 @@ type Topic struct {
 // Usage is one line of a briefing: an example and what it does.
 type Usage struct{ Example, Does string }
 
-// Drill is one task, checked by where the player ends up.
+// Drill is one task, checked by the files the player ends up with, the
+// folder they end up in, or both.
 //
-// Task, Start, StartDir, GoalDir and Solution may contain placeholders like
+// Task, Start, StartDir, Goal, GoalDir and Solution may contain placeholders like
 // {a}. Fill swaps each one for a name from Names, so every play of a drill
 // uses different names.
 type Drill struct {
@@ -33,9 +34,10 @@ type Drill struct {
 	Title    string
 	Task     string
 	Start    sandbox.Files
-	StartDir string   // where the player starts, like "~/work"; empty means ~
-	GoalDir  string   // the folder to end in
-	Solution []string // a reference solution, shown by hint; its length is par
+	StartDir string        // where the player starts, like "~/work"; empty means ~
+	Goal     sandbox.Files // the files to end with; nil when only the folder matters
+	GoalDir  string        // the folder to end in; empty when it doesn't matter
+	Solution []string      // a reference solution, shown by hint; its length is par
 	Names    map[string][]string
 }
 
@@ -49,17 +51,24 @@ func (d Drill) Fill(pick func(n int) int) Drill {
 	r := strings.NewReplacer(pairs...)
 
 	d.Task, d.StartDir, d.GoalDir = r.Replace(d.Task), r.Replace(d.StartDir), r.Replace(d.GoalDir)
-	start := sandbox.Files{}
-	for path, content := range d.Start {
-		start[r.Replace(path)] = r.Replace(content)
-	}
-	d.Start = start
+	d.Start, d.Goal = fillFiles(r, d.Start), fillFiles(r, d.Goal)
 	solution := make([]string, len(d.Solution))
 	for i, c := range d.Solution {
 		solution[i] = r.Replace(c)
 	}
 	d.Solution = solution
 	return d
+}
+
+func fillFiles(r *strings.Replacer, files sandbox.Files) sandbox.Files {
+	if files == nil {
+		return nil
+	}
+	filled := sandbox.Files{}
+	for path, content := range files {
+		filled[r.Replace(path)] = r.Replace(content)
+	}
+	return filled
 }
 
 // Par is the number of commands a good solution needs.
@@ -79,12 +88,21 @@ func (d Drill) Sandbox() (*sandbox.Sandbox, error) {
 }
 
 // Solved reports whether the player has reached the goal.
-func (d Drill) Solved(s *sandbox.Sandbox) bool { return s.Where() == d.GoalDir }
+func (d Drill) Solved(s *sandbox.Sandbox) bool {
+	if d.GoalDir != "" && s.Where() != d.GoalDir {
+		return false
+	}
+	if d.Goal == nil {
+		return true
+	}
+	files, err := s.Files()
+	return err == nil && files.Equal(d.Goal)
+}
 
 // Shell is the course, easiest topic first.
 var Shell = []Topic{
 	movingAround,
-	{ID: "making-things", Title: "Making things", Commands: "mkdir touch"},
+	makingThings,
 	{ID: "mv", Title: "Moving and renaming", Commands: "mv"},
 	{ID: "cp", Title: "Copying", Commands: "cp"},
 	{ID: "rm", Title: "Deleting", Commands: "rm rmdir"},

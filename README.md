@@ -8,8 +8,8 @@ approach counts. Vim drills come later: they will run on a built-in simulator,
 so you type real Vim keys and score by how few keystrokes you need, with no Vim
 install required.
 
-> **Status:** early development. The first shell topic, Moving around, is
-> playable; more topics are being added one at a time.
+> **Status:** early development. The first two shell topics, Moving around
+> and Making things, are playable; more are being added one at a time.
 
 ## Install
 
@@ -33,13 +33,17 @@ go run .
 The shell course is a run of topics, easiest first. Each topic starts with a
 briefing on its commands, followed by drills that get harder, ending in an
 exam. Solve a drill to unlock the next; pass the exam to unlock the next topic.
+Folder and file names change every time you play a drill, so you can't just
+memorise the answer. From the second topic on, a panel shows your files next
+to how they should end up.
 
 Every command you run counts. Solve a drill at par for ★★★, within two
 commands of par for ★★, and anything more for ★. Using the hint caps you at ★★.
 
 Commands run in your own `$SHELL` (sh, bash, zsh, dash or ksh; anything else
 falls back to `/bin/sh`), from a temporary folder that acts as your home
-folder for the drill.
+folder for the drill. Their output goes to a pseudo-terminal, so it looks as
+it does in your own terminal, with `ls` columns and all.
 
 ### Safety
 
@@ -84,7 +88,8 @@ config folder: `~/Library/Application Support/keydrill/` on macOS,
 
 - [ ] Shell course
   - [x] Moving around: `pwd` `ls` `cd`
-  - [ ] Making things, moving, copying, deleting, wildcards
+  - [x] Making things: `mkdir` `touch` `&&`
+  - [ ] Moving, copying, deleting, wildcards
   - [ ] Reading and redirecting, `grep`, `find`, pipes, `xargs`
 - [ ] Stats: skill level and weak spots
 - [ ] Vim motion drills

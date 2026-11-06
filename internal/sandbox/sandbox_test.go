@@ -3,6 +3,7 @@ package sandbox
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -131,6 +132,19 @@ func TestRunResult(t *testing.T) {
 	if res := run(t, s, "mkdir docs && cd docs && pwd"); res.Output != "~/docs\n" {
 		t.Errorf("pwd printed %q, want the sandbox shown as ~", res.Output)
 	}
+	if res := run(t, s, "test -t 1 && echo terminal"); res.Output != "terminal\n" {
+		t.Errorf("output isn't a terminal: %q", res.Output)
+	}
+	if res := run(t, s, "touch alpha beta gamma delta && ls"); strings.Count(res.Output, "\n") != 1 || strings.Contains(res.Output, "\t") {
+		t.Errorf("ls didn't lay names out in columns of spaces: %q", res.Output)
+	}
+	s.Width = 12
+	if res := run(t, s, "ls"); strings.Count(res.Output, "\n") < 2 {
+		t.Errorf("ls ignored a narrow width: %q", res.Output)
+	}
+	if res := run(t, s, "cat"); res.TimedOut {
+		t.Error("cat waited for input instead of ending at once")
+	}
 	if res := run(t, s, "exit 3"); res.ExitCode != 3 {
 		t.Errorf("exit 3: exit %d", res.ExitCode)
 	}
@@ -148,8 +162,22 @@ func TestRunLimits(t *testing.T) {
 	if res := run(t, s, "sleep 5"); !res.TimedOut {
 		t.Error("sleep 5 did not time out")
 	}
-	if res := run(t, s, "yes"); len(res.Output) != maxOutput {
-		t.Errorf("yes kept %d bytes of output, want %d", len(res.Output), maxOutput)
+	if res := run(t, s, `head -c 100000 /dev/zero | tr '\0' y`); len(res.Output) != maxOutput {
+		t.Errorf("kept %d bytes of 100000, want %d", len(res.Output), maxOutput)
+	}
+}
+
+func TestExpandTabs(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"a\tb", "a       b"},
+		{"alpha\tbeta\ngamma\tdelta", "alpha   beta\ngamma   delta"},
+		{"12345678\tx", "12345678        x"},
+		{"\x1b[34mdir\x1b[m\tfile", "\x1b[34mdir\x1b[m     file"},
+	}
+	for _, tt := range tests {
+		if got := expandTabs(tt.in); got != tt.want {
+			t.Errorf("expandTabs(%q) = %q, want %q", tt.in, got, tt.want)
+		}
 	}
 }
 

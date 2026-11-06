@@ -43,6 +43,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		a.width, a.height = msg.Width, msg.Height
+		if d, ok := a.screen.(drillPage); ok {
+			d.cols = pageWidth(a.width)
+			a.screen = d
+		}
 		return a, nil
 	case showMenu:
 		a.screen = menu{}
@@ -61,6 +65,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.screen = page
 			return a, nil
 		}
+		d.cols = pageWidth(a.width)
 		a.screen = d
 		return a, nil
 	}

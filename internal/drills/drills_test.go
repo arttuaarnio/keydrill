@@ -84,8 +84,10 @@ func TestEveryDrillIsSolvable(t *testing.T) {
 func checkFilled(t *testing.T, name string, d Drill) {
 	t.Helper()
 	parts := append([]string{d.Task, d.StartDir, d.GoalDir}, d.Solution...)
-	for path, content := range d.Start {
-		parts = append(parts, path, content)
+	for _, files := range []map[string]string{d.Start, d.Goal} {
+		for path, content := range files {
+			parts = append(parts, path, content)
+		}
 	}
 	if left := placeholder.FindString(strings.Join(parts, "\n")); left != "" {
 		t.Errorf("%s: %s has no names", name, left)

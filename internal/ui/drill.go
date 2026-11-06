@@ -2,12 +2,16 @@ package ui
 
 import (
 	"fmt"
+	"maps"
 	"math/rand/v2"
+	"path"
+	"slices"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/arttuaarnio/keydrill/internal/drills"
 	"github.com/arttuaarnio/keydrill/internal/progress"
@@ -25,9 +29,11 @@ type drillPage struct {
 	box      *sandbox.Sandbox
 
 	input    textinput.Model
-	log      []string // everything shown above the prompt, oldest first
-	where    string   // the sandbox's current folder, cached for drawing
-	history  []string // commands typed, for up and down
+	log      []string      // everything shown above the prompt, oldest first
+	where    string        // the sandbox's current folder, cached for drawing
+	files    sandbox.Files // the sandbox's files, cached for drawing
+	cols     int           // how wide command output may be
+	history  []string      // commands typed, for up and down
 	histPos  int
 	commands int
 	hinted   bool // saw the hint during this visit, which caps the stars
@@ -44,6 +50,7 @@ type ranMsg struct {
 	res    sandbox.Result
 	err    error
 	where  string
+	files  sandbox.Files
 	solved bool
 }
 
@@ -61,7 +68,7 @@ func newDrillPage(p *progress.Progress, topic, index int) (drillPage, error) {
 	styles.Cursor.Blink = false
 	in.SetStyles(styles)
 	in.Focus()
-	return drillPage{progress: p, topic: topic, index: index, t: t, d: d, box: box, input: in, where: box.Where()}, nil
+	return drillPage{progress: p, topic: topic, index: index, t: t, d: d, box: box, input: in, where: box.Where(), files: snapshot(box)}, nil
 }
 
 func (m drillPage) update(msg tea.Msg) (screen, tea.Cmd) {
@@ -142,9 +149,10 @@ func (m drillPage) submit() (screen, tea.Cmd) {
 		m.commands++
 		m.running = true
 		box, d := m.box, m.d
+		box.Width = m.cols
 		return m, func() tea.Msg {
 			res, err := box.Run(line)
-			return ranMsg{res: res, err: err, where: box.Where(), solved: err == nil && d.Solved(box)}
+			return ranMsg{res: res, err: err, where: box.Where(), files: snapshot(box), solved: err == nil && d.Solved(box)}
 		}
 	}
 	return m, nil
@@ -152,7 +160,7 @@ func (m drillPage) submit() (screen, tea.Cmd) {
 
 func (m drillPage) finish(msg ranMsg) drillPage {
 	m.running = false
-	m.where = msg.where
+	m.where, m.files = msg.where, msg.files
 	if out := strings.TrimRight(msg.res.Output, "\n"); out != "" {
 		m.log = append(m.log, out)
 	}
@@ -207,7 +215,7 @@ func (m drillPage) reset() drillPage {
 		return m
 	}
 	m.close()
-	m.box, m.where = box, box.Where()
+	m.box, m.where, m.files = box, box.Where(), snapshot(box)
 	m.log, m.commands, m.solved = nil, 0, false
 	m.input.Focus()
 	return m
@@ -247,6 +255,9 @@ func (m drillPage) view(width, height int) string {
 	header := spread(title.Render(fmt.Sprintf("%s · %d of %d", m.t.Title, m.index+1, len(m.t.Drills))),
 		faint.Render(fmt.Sprintf("par %d", m.d.Par())), w)
 	top := header + "\n\n" + lipgloss.NewStyle().Width(w).Render(m.d.Task) + "\n"
+	if m.d.Goal != nil {
+		top += "\n" + m.panels(w) + "\n"
+	}
 
 	// The log scrolls like a terminal: the prompt follows the newest output.
 	var area []string
@@ -280,4 +291,63 @@ func (m drillPage) view(width, height int) string {
 		area = append(area, "")
 	}
 	return top + "\n" + strings.Join(area, "\n") + "\n\n" + footer
+}
+
+// snapshot lists the sandbox's files for drawing; an unreadable sandbox
+// just shows as empty.
+func snapshot(box *sandbox.Sandbox) sandbox.Files {
+	files, _ := box.Files()
+	return files
+}
+
+// panels draws the files as they are now next to how they should end up.
+func (m drillPage) panels(w int) string {
+	colW := (w - 2) / 2
+	now, goal := tree(m.files), tree(m.d.Goal)
+	rows := []string{faint.Render(column("now", colW)) + "  " + faint.Render("goal")}
+	for i := range max(len(now), len(goal)) {
+		var left, right string
+		if i < len(now) {
+			left = now[i]
+		}
+		if i < len(goal) {
+			right = goal[i]
+		}
+		rows = append(rows, column(left, colW)+"  "+ansi.Truncate(right, colW, "…"))
+	}
+	return strings.Join(rows, "\n")
+}
+
+// column cuts or pads s to exactly width columns.
+func column(s string, width int) string {
+	s = ansi.Truncate(s, width, "…")
+	return s + strings.Repeat(" ", width-lipgloss.Width(s))
+}
+
+// tree lists files as an indented outline, with folders marked by a slash.
+// Hidden files are included.
+func tree(files sandbox.Files) []string {
+	if len(files) == 0 {
+		return []string{faint.Render("(empty)")}
+	}
+	paths := map[string]bool{}
+	for p := range files {
+		paths[p] = true
+		// Files only lists folders that are empty, so add the parents.
+		for i := range len(p) - 1 {
+			if p[i] == '/' {
+				paths[p[:i+1]] = true
+			}
+		}
+	}
+	var lines []string
+	for _, p := range slices.Sorted(maps.Keys(paths)) {
+		trimmed := strings.TrimSuffix(p, "/")
+		name := path.Base(trimmed)
+		if strings.HasSuffix(p, "/") {
+			name += "/"
+		}
+		lines = append(lines, strings.Repeat("  ", strings.Count(trimmed, "/"))+name)
+	}
+	return lines
 }

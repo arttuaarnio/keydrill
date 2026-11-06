@@ -4,6 +4,7 @@ package sandbox
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -54,6 +56,8 @@ type Result struct {
 
 // Sandbox is a temporary folder that acts as the player's home folder.
 type Sandbox struct {
+	Width int // columns programs see, for example when ls lays out names; 0 means 80
+
 	base string // the keydrill-* temp folder; holds home and the pwd file
 	home string // the player's ~
 	dir  string // current folder, always inside home
@@ -138,15 +142,13 @@ func (s *Sandbox) Run(command string) (Result, error) {
 		"KEYDRILL_PREV="+s.prev, "KEYDRILL_DIR="+s.dir, "KEYDRILL_PWD="+pwdFile,
 	)
 	out := &capped{max: maxOutput}
-	cmd.Stdout, cmd.Stderr = out, out
-	cmd.WaitDelay = time.Second // don't wait long on background jobs holding the output open
-	inGroup(cmd)
+	err := execute(cmd, out, cmp.Or(s.Width, 80))
 
-	err := cmd.Run()
-	killGroup(cmd) // ESRCH just means nothing was left running
-	// The sandbox is the player's home, so show its long temp path as ~.
+	// Terminals end lines with \r\n. The sandbox is the player's home, so
+	// show its long temp path as ~.
+	output := expandTabs(strings.ReplaceAll(out.String(), "\r\n", "\n"))
 	res := Result{
-		Output:   strings.ReplaceAll(out.buf.String(), s.home, "~"),
+		Output:   strings.ReplaceAll(output, s.home, "~"),
 		TimedOut: ctx.Err() == context.DeadlineExceeded,
 	}
 	var exitErr *exec.ExitError
@@ -267,16 +269,53 @@ func shell() string {
 	return "/bin/sh"
 }
 
+// expandTabs turns tabs into spaces at 8-column stops, as a terminal shows
+// them, so columns from ls stay lined up. Escape sequences, such as colours,
+// take up no columns.
+func expandTabs(s string) string {
+	var b strings.Builder
+	col, esc := 0, false
+	for _, r := range s {
+		switch {
+		case r == '\t':
+			n := 8 - col%8
+			b.WriteString(strings.Repeat(" ", n))
+			col += n
+			continue
+		case r == '\n':
+			col = 0
+		case r == '\x1b':
+			esc = true
+		case esc:
+			esc = r == '[' || r < '@' || r > '~' // a letter ends the sequence
+		default:
+			col++
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
 // capped keeps the first max bytes written to it and drops the rest, so a
-// runaway command like `yes` can't fill memory.
+// runaway command like `yes` can't fill memory. It's safe to read while a
+// command is still writing, in case a stray job outlives the wait for it.
 type capped struct {
+	mu  sync.Mutex
 	buf bytes.Buffer
 	max int
 }
 
 func (c *capped) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if room := c.max - c.buf.Len(); room > 0 {
 		c.buf.Write(p[:min(len(p), room)])
 	}
 	return len(p), nil
+}
+
+func (c *capped) String() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.buf.String()
 }

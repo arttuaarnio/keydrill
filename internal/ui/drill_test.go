@@ -2,6 +2,7 @@ package ui
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -9,6 +10,7 @@ import (
 
 	"github.com/arttuaarnio/keydrill/internal/drills"
 	"github.com/arttuaarnio/keydrill/internal/progress"
+	"github.com/arttuaarnio/keydrill/internal/sandbox"
 )
 
 func newProgress(t *testing.T) *progress.Progress {
@@ -178,6 +180,30 @@ func TestAppCloseDeletesTheSandbox(t *testing.T) {
 	}
 }
 
+func TestTree(t *testing.T) {
+	got := tree(sandbox.Files{"src/app/main.go": "", "notes.txt": "", "empty/": "", ".env": ""})
+	want := []string{".env", "empty/", "notes.txt", "src/", "  app/", "    main.go"}
+	if !slices.Equal(got, want) {
+		t.Errorf("tree = %q, want %q", got, want)
+	}
+}
+
+func TestDrillWithGoalFiles(t *testing.T) {
+	t.Setenv("SHELL", "/bin/sh")
+	m, err := newDrillPage(newProgress(t), 1, 0) // Making things: "Make a folder called {a}"
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.close()
+	if !strings.Contains(m.view(80, 40), "goal") {
+		t.Error("no now/goal panels on a drill with goal files")
+	}
+	m = typeLine(t, m, m.d.Solution[0])
+	if !m.solved || !m.files.Equal(m.d.Goal) {
+		t.Errorf("solved %v, files %v; want the goal %v", m.solved, m.files, m.d.Goal)
+	}
+}
+
 func TestTopicPageScrollsToTheCursor(t *testing.T) {
 	page := newTopicPage(newProgress(t), 0)
 	last := len(drills.Shell[0].Drills) - 1
@@ -203,7 +229,11 @@ func TestUnlocks(t *testing.T) {
 	if !drillOpen(p, 0, 1) || drillOpen(p, 0, 2) {
 		t.Error("solving drill 1 should open drill 2 and only drill 2")
 	}
-	if got, want := skill(p), 300/(3*len(topic.Drills)); got != want {
+	total := 0
+	for _, t := range drills.Shell {
+		total += len(t.Drills)
+	}
+	if got, want := skill(p), 300/(3*total); got != want {
 		t.Errorf("skill = %d%%, want %d%%", got, want)
 	}
 }
